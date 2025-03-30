@@ -12,30 +12,23 @@
         <div class="price-monitor">
           <div class="chart-container">
             <div class="chart-header">
-              <div class="coin-selector">
-                <select v-model="selectedCoin">
-                  <option v-for="coin in coins" :key="coin.id" :value="coin.id">
-                    {{ coin.name }}
-                  </option>
-                </select>
-              </div>
+              <select v-model="selectedSymbol">
+                <option value="BTCUSDT">BTC/USDT</option>
+                <option value="ETHUSDT">ETH/USDT</option>
+                <option value="BNBUSDT">BNB/USDT</option>
+              </select>
               <div class="time-range">
                 <button 
-                  v-for="range in timeRanges" 
-                  :key="range"
-                  :class="{ active: selectedRange === range }"
-                  @click="selectedRange = range"
+                  v-for="interval in intervals" 
+                  :key="interval"
+                  :class="{ active: selectedInterval === interval }"
+                  @click="changeInterval(interval)"
                 >
-                  {{ range }}
+                  {{ interval }}
                 </button>
               </div>
             </div>
-            <div class="chart">
-              <!-- 这里可以集成实际的图表库，如 ECharts 或 Chart.js -->
-              <div class="chart-placeholder">
-                价格走势图
-              </div>
-            </div>
+            <div id="chart" ref="chartContainer"></div>
           </div>
           <div class="price-alerts">
             <h3>价格提醒</h3>
@@ -56,7 +49,7 @@
               </button>
             </div>
             <div class="active-alerts">
-              <div class="alert-item" v-for="alert in activeAlerts" :key="alert.id">
+              <div class="alert-item" v-for="(alert, index) in activeAlerts" :key="index">
                 <span>{{ alert.coin }} {{ alert.condition }} ${{ alert.price }}</span>
                 <button class="btn-delete" @click="deleteAlert(alert.id)">
                   <i class="fas fa-times"></i>
@@ -82,14 +75,14 @@
             </button>
           </div>
           <div class="wallet-list">
-            <div class="wallet-card" v-for="wallet in monitoredWallets" :key="wallet.address">
+            <div class="wallet-card" v-for="(wallet, index) in monitoredWallets" :key="index">
               <div class="wallet-info">
                 <h4>{{ wallet.address.substring(0, 6) }}...{{ wallet.address.substring(38) }}</h4>
                 <p>余额: {{ wallet.balance }} ETH</p>
               </div>
               <div class="wallet-transactions">
                 <h5>最近交易</h5>
-                <div class="transaction" v-for="tx in wallet.recentTx" :key="tx.hash">
+                <div class="transaction" v-for="(tx, txIndex) in wallet.recentTx" :key="txIndex">
                   <span :class="tx.type">{{ tx.type === 'in' ? '收入' : '支出' }}</span>
                   <span>{{ tx.amount }} ETH</span>
                   <span class="tx-time">{{ tx.time }}</span>
@@ -102,13 +95,13 @@
   
       <!-- Bot 演示 -->
       <section class="demo-section">
-        <h2>Telegram Bot 演示</h2>
+        <h2>价格查询演示</h2>
         <div class="bot-demo">
           <div class="bot-chat">
-            <div class="chat-messages">
+            <div class="chat-messages" ref="chatMessages">
               <div 
-                v-for="message in botMessages" 
-                :key="message.id"
+                v-for="(message, index) in botMessages" 
+                :key="index"
                 :class="['message', message.type]"
               >
                 {{ message.text }}
@@ -119,7 +112,7 @@
               <input 
                 type="text" 
                 v-model="botCommand" 
-                placeholder="输入命令 (例如: /price ETH)"
+                placeholder="输入命令 (例如: /price BTC)"
                 @keyup.enter="sendCommand"
               >
               <button class="btn btn-primary" @click="sendCommand">
@@ -130,9 +123,9 @@
           <div class="bot-commands">
             <h3>可用命令</h3>
             <ul>
-              <li v-for="command in botCommands" :key="command.cmd">
-                <code>{{ command.cmd }}</code>
-                <span>{{ command.description }}</span>
+              <li>
+                <code>/price 币种</code>
+                <span>查询当前价格 (例如: /price BTC)</span>
               </li>
             </ul>
           </div>
@@ -142,18 +135,21 @@
   </template>
   
   <script>
+  import axios from 'axios';
+  // eslint-disable-next-line no-undef
+  const LightweightCharts = window.LightweightCharts;
+  
   export default {
     name: 'DemoView',
     data() {
       return {
-        selectedCoin: 'ETH',
-        selectedRange: '24H',
-        coins: [
-          { id: 'ETH', name: '以太坊' },
-          { id: 'BTC', name: '比特币' },
-          { id: 'BNB', name: '币安币' }
-        ],
-        timeRanges: ['24H', '7D', '30D', '1Y'],
+        wsUrl: 'wss://stream.binance.com:9443/ws',
+        selectedSymbol: 'BTCUSDT',
+        selectedInterval: '1m',
+        intervals: ['1m', '5m', '15m', '1h', '4h', '1d'],
+        chart: null,
+        series: null,
+        ws: null,
         alertPrice: '',
         alertCondition: 'above',
         activeAlerts: [
@@ -173,23 +169,119 @@
         ],
         botCommand: '',
         botMessages: [
-          { id: 1, type: 'system', text: '欢迎使用 BlockAlert Bot!', time: '12:00' },
-          { id: 2, type: 'user', text: '/price ETH', time: '12:01' },
-          { id: 3, type: 'bot', text: 'ETH 当前价格: $1,850.45', time: '12:01' }
-        ],
-        botCommands: [
-          { cmd: '/price <币种>', description: '查询当前价格' },
-          { cmd: '/alert <币种> <价格>', description: '设置价格提醒' },
-          { cmd: '/wallet <地址>', description: '查询钱包信息' }
+          {
+            id: 1,
+            type: 'system',
+            text: '欢迎使用价格查询功能！',
+            time: new Date().toLocaleTimeString()
+          }
         ]
       }
     },
+    mounted() {
+      this.initChart()
+      this.fetchHistoricalData()
+      this.setupWebSocket()
+    },
+    beforeUnmount() {
+      if (this.ws) {
+        this.ws.close();
+      }
+    },
     methods: {
+      initChart() {
+        try {
+          // eslint-disable-next-line no-undef
+          const chart = LightweightCharts.createChart(this.$refs.chartContainer, {
+            width: this.$refs.chartContainer.clientWidth,
+            height: 400,
+            layout: {
+              backgroundColor: '#ffffff',
+              textColor: '#000',
+            },
+            grid: {
+              vertLines: {
+                color: '#f0f0f0',
+              },
+              horzLines: {
+                color: '#f0f0f0',
+              },
+            },
+            crosshair: {
+              mode: LightweightCharts.CrosshairMode.Normal,
+            },
+            timeScale: {
+              borderColor: '#f0f0f0',
+            },
+          })
+          console.log('图表初始化成功:', chart)
+          this.chart = chart
+          this.series = chart.addCandlestickSeries()
+        } catch (error) {
+          console.error('图表初始化失败:', error)
+        }
+      },
+
+      async fetchHistoricalData() {
+        try {
+          if (!this.series) {
+            await this.initChart()
+          }
+          const response = await axios.get(`https://api.binance.com/api/v3/klines?symbol=${this.selectedSymbol}&interval=${this.selectedInterval}&limit=100`)
+          const data = response.data.map(item => ({
+            time: item[0] / 1000,
+            open: parseFloat(item[1]),
+            high: parseFloat(item[2]),
+            low: parseFloat(item[3]),
+            close: parseFloat(item[4]),
+          }))
+          this.series.setData(data)
+        } catch (error) {
+          console.error('获取历史数据失败:', error)
+        }
+      },
+
+      setupWebSocket() {
+        // eslint-disable-next-line no-undef
+        const ws = new window.WebSocket(this.wsUrl)
+        
+        ws.onopen = () => {
+          console.log('WebSocket 连接成功')
+          // 订阅 K 线数据
+          const msg = {
+            method: 'SUBSCRIBE',
+            params: [`${this.selectedSymbol.toLowerCase()}@kline_${this.selectedInterval}`],
+            id: 1
+          }
+          ws.send(JSON.stringify(msg))
+        }
+
+        ws.onerror = (error) => {
+          console.error('WebSocket 连接错误:', error)
+        }
+
+        ws.onclose = () => {
+          console.warn('WebSocket 连接关闭')
+        }
+
+        ws.onmessage = (event) => {
+          // eslint-disable-next-line no-unused-vars
+          const data = JSON.parse(event.data)
+          console.log('收到 WebSocket 数据:', data)
+          // ... 处理数据 ...
+        }
+      },
+
+      changeInterval(interval) {
+        this.selectedInterval = interval;
+        this.fetchHistoricalData();
+        this.setupWebSocket();
+      },
       setAlert() {
         if (!this.alertPrice) return
         this.activeAlerts.push({
           id: Date.now(),
-          coin: this.selectedCoin,
+          coin: this.selectedSymbol,
           condition: this.alertCondition === 'above' ? '高于' : '低于',
           price: this.alertPrice
         })
@@ -207,30 +299,49 @@
         })
         this.walletAddress = ''
       },
-      sendCommand() {
-        if (!this.botCommand) return
+      async sendCommand() {
+        if (!this.botCommand) return;
+
+        this.addMessage('user', this.botCommand);
+
+        if (this.botCommand.startsWith('/price')) {
+          const symbol = this.botCommand.split(' ')[1];
+          if (!symbol) {
+            this.addMessage('bot', '请输入币种符号，例如: /price BTC');
+          } else {
+            try {
+              this.addMessage('bot', `正在查询 ${symbol} 的价格...`);
+              const response = await axios.get(`http://localhost:3000/api/price/${symbol}`);
+              this.addMessage('bot', `${symbol} 当前价格: $${response.data.price}`);
+            } catch (error) {
+              const errorMessage = error.response?.data?.message || '获取价格失败，请稍后重试';
+              this.addMessage('bot', errorMessage);
+            }
+          }
+        } else {
+          this.addMessage('bot', '未知命令，请使用 /price 币种 查询价格');
+        }
+
+        this.botCommand = '';
+        
+        this.$nextTick(() => {
+          const chatMessages = this.$refs.chatMessages;
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        });
+      },
+      addMessage(type, text) {
         this.botMessages.push({
           id: Date.now(),
-          type: 'user',
-          text: this.botCommand,
+          type,
+          text,
           time: new Date().toLocaleTimeString()
-        })
-        // 模拟机器人回复
-        setTimeout(() => {
-          this.botMessages.push({
-            id: Date.now(),
-            type: 'bot',
-            text: this.generateBotResponse(this.botCommand),
-            time: new Date().toLocaleTimeString()
-          })
-        }, 500)
-        this.botCommand = ''
-      },
-      generateBotResponse(command) {
-        if (command.startsWith('/price')) {
-          return `${command.split(' ')[1]} 当前价格: $${(Math.random() * 2000 + 1000).toFixed(2)}`
-        }
-        return '收到命令：' + command
+        });
+      }
+    },
+    watch: {
+      selectedSymbol() {
+        this.fetchHistoricalData();
+        this.setupWebSocket();
       }
     }
   }
@@ -263,9 +374,10 @@
   
   /* 价格监控样式 */
   .price-monitor {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: 2rem;
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   }
   
   .chart-container {
@@ -278,29 +390,39 @@
   .chart-header {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 1rem;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  
+  select {
+    padding: 8px;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+  }
+  
+  .time-range {
+    display: flex;
+    gap: 10px;
   }
   
   .time-range button {
-    padding: 0.5rem 1rem;
-    border: none;
-    background: none;
+    padding: 8px 16px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: white;
     cursor: pointer;
+    transition: all 0.3s;
   }
   
   .time-range button.active {
-    color: #3498db;
-    font-weight: 600;
+    background: #3498db;
+    color: white;
+    border-color: #3498db;
   }
   
-  .chart-placeholder {
-    height: 300px;
-    background: #f8f9fa;
+  #chart {
     border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #666;
+    overflow: hidden;
   }
   
   .price-alerts {
