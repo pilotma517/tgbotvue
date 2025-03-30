@@ -54,6 +54,42 @@ setInterval(() => {
     }
 }, CACHE_DURATION);
 
+const ETHERSCAN_API_KEY = 'J1H34ABAUEWU2HGPES7JDST8X2PVC6GYCM'; // 替换为你的 Etherscan API 密钥
+
+// 获取钱包交易记录
+app.get('/api/wallet/transactions', async (req, res) => {
+  const { address } = req.query;
+
+  if (!address) {
+    return res.status(400).json({ error: '钱包地址不能为空' });
+  }
+
+  try {
+    const response = await axios.get(
+      `https://api.etherscan.io/api?module=account&action=tokentx&address=${address}&startblock=0&endblock=99999999&sort=desc&apikey=${ETHERSCAN_API_KEY}`
+    );
+
+    if (response.data.status !== '1') {
+      return res.status(500).json({ error: '获取交易记录失败' });
+    }
+
+    // 解析并返回最近 10 笔交易
+    const transactions = response.data.result.slice(0, 10).map(tx => ({
+      hash: tx.hash,
+      timestamp: new Date(tx.timeStamp * 1000).toLocaleString(),
+      from: tx.from,
+      to: tx.to,
+      value: `${(tx.value / Math.pow(10, tx.tokenDecimal)).toFixed(4)} ${tx.tokenSymbol}`,
+      status: tx.isError === '0' ? '成功' : '失败',
+    }));
+
+    res.json(transactions);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: '服务器错误' });
+  }
+});
+
 const PORT = 3000;
 app.listen(PORT, () => {
     console.log(`服务器运行在 http://localhost:${PORT}`);

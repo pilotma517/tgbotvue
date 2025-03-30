@@ -70,8 +70,8 @@
               v-model="walletAddress" 
               placeholder="输入钱包地址"
             >
-            <button class="btn btn-primary" @click="addWallet">
-              添加监控
+            <button class="btn btn-primary" @click="fetchTransactions">
+              查询交易记录
             </button>
           </div>
           <div class="wallet-list">
@@ -131,6 +131,32 @@
           </div>
         </div>
       </section>
+
+      <div v-if="loading">加载中...</div>
+      <div v-if="error" class="error">{{ error }}</div>
+
+      <table v-if="transactions.length > 0">
+        <thead>
+          <tr>
+            <th>交易哈希</th>
+            <th>时间</th>
+            <th>发送方</th>
+            <th>接收方</th>
+            <th>金额</th>
+            <th>状态</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="tx in transactions" :key="tx.hash">
+            <td>{{ tx.hash }}</td>
+            <td>{{ tx.timestamp }}</td>
+            <td>{{ tx.from }}</td>
+            <td>{{ tx.to }}</td>
+            <td>{{ tx.value }}</td>
+            <td>{{ tx.status }}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </template>
   
@@ -175,7 +201,10 @@
             text: '欢迎使用价格查询功能！',
             time: new Date().toLocaleTimeString()
           }
-        ]
+        ],
+        transactions: [],
+        loading: false,
+        error: '',
       }
     },
     mounted() {
@@ -290,14 +319,25 @@
       deleteAlert(id) {
         this.activeAlerts = this.activeAlerts.filter(alert => alert.id !== id)
       },
-      addWallet() {
-        if (!this.walletAddress) return
-        this.monitoredWallets.push({
-          address: this.walletAddress,
-          balance: '0.00',
-          recentTx: []
-        })
-        this.walletAddress = ''
+      async fetchTransactions() {
+        if (!this.walletAddress) {
+          this.error = '请输入钱包地址';
+          return;
+        }
+
+        this.loading = true;
+        this.error = '';
+
+        try {
+          const response = await axios.get(`http://localhost:3000/api/wallet/transactions?address=${this.walletAddress}`);
+          console.log('API 响应数据:', response.data); // 添加日志
+          this.transactions = response.data;
+        } catch (err) {
+          this.error = '获取交易记录失败，请稍后重试';
+          console.error('API 请求失败:', err);
+        } finally {
+          this.loading = false;
+        }
       },
       async sendCommand() {
         if (!this.botCommand) return;
@@ -678,5 +718,25 @@
   
   .btn-delete:hover {
     color: #c0392b;
+  }
+
+  .error {
+    color: red;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+  }
+
+  th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+  }
+
+  th {
+    background-color: #f2f2f2;
   }
   </style> 
