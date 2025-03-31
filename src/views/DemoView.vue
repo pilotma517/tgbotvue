@@ -329,7 +329,7 @@
         this.error = '';
 
         try {
-          const response = await axios.get(`http://localhost:3000/api/wallet/transactions?address=${this.walletAddress}`);
+          const response = await axios.get(`https://your-app.vercel.app/api/wallet/transactions?address=${this.walletAddress}`);
           console.log('API 响应数据:', response.data); // 添加日志
           this.transactions = response.data;
         } catch (err) {

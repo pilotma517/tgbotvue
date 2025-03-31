@@ -54,10 +54,10 @@ setInterval(() => {
     }
 }, CACHE_DURATION);
 
-const ETHERSCAN_API_KEY = 'J1H34ABAUEWU2HGPES7JDST8X2PVC6GYCM'; // 替换为你的 Etherscan API 密钥
+const ETHERSCAN_API_KEY = 'YourEtherscanApiKey'; // 替换为你的 Etherscan API 密钥
 
 // 获取钱包交易记录
-app.get('/api/wallet/transactions', async (req, res) => {
+app.get('/wallet/transactions', async (req, res) => {
   const { address } = req.query;
 
   if (!address) {
@@ -94,3 +94,5 @@ const PORT = 3000;
 app.listen(PORT, () => {
     console.log(`服务器运行在 http://localhost:${PORT}`);
 });
+
+module.exports = app;
